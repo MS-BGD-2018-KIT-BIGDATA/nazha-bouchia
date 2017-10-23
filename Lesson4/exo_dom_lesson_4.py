@@ -1,9 +1,15 @@
 # ENONCE DU T.P
 # L'objectif est de générer un fichier de données sur le prix des Renault Zoé sur le marché de l'occasion 
 # en Ile de France, PACA et Aquitaine. 
-# Vous utiliserez leboncoin.fr comme source. Le fichier doit être propre et contenir les infos suivantes : version 
-# ( il y en a 3), année, kilométrage, prix, téléphone du propriétaire, est ce que la voiture est vendue par un professionnel 
-# ou un particulier.
+#
+# Vous utiliserez leboncoin.fr comme source. Le fichier doit être propre et contenir les infos suivantes : 
+#   - version ( il y en a 3) (ZEN, LIFE, INTENS)
+#   - année
+#   - kilométrage
+#   - prix
+#   - téléphone du propriétaire
+#   - est ce que la voiture est vendue par un professionnel ou un particulier.
+#
 # Vous ajouterez une colonne sur le prix de l'Argus du modèle que vous récupérez sur ce site 
 # http://www.lacentrale.fr/cote-voitures-renault-zoe--2013-.html.
 # 
@@ -11,8 +17,13 @@
 # Vous ajouterez une colonne si la voiture est plus chere ou moins chere que sa cote moyenne.
 #
 
+# THIS TIME TEST THREAD INSTEAD MULTIPROCESSING
+# TODO : TO IMPROVE THE PROGRAM : SET A CACHE FOR ARGUS
+# TODO : EXTRACT ALL PAGES
+#
+
+
 from threading import Thread
-#import multiprocessing as mp
 import requests
 import bs4
 import logging
@@ -42,6 +53,16 @@ class MyThread(Thread):
     
         return ''
 
+
+    def extractArgus(self, version, annee):
+        url = 'https://www.lacentrale.fr/cote-auto-renault-zoe-'+version+'-'+str(annee)+'.html'
+        response = getContent(url)
+        parser = bs4.BeautifulSoup(response, 'html.parser')
+        jsRefinedQuot = parser.find(attrs={"class":"jsRefinedQuot"}).text
+        argus = int(''.join(re.findall("\d+", jsRefinedQuot)))
+        return argus
+
+
     def extractInformation(self, url):
         response = getContent(url)
         parser = bs4.BeautifulSoup(response, 'html.parser')    
@@ -54,7 +75,15 @@ class MyThread(Thread):
         result['Region'] = self.region
         result['Type'] = json.loads(annonce.get('data-info'))['ad_offres']
         result['Title'] = annonce.get('title')
+        versions = re.findall("(zen|intens|life){1}", result['Title'].lower())
+        version = 'intens'
+        if(len(versions)) :
+            version = versions[0]
+        result['Version'] = version
+        #
         result.update(self.extractInformation(href))
+        # Get Argus
+        result['Argus'] = self.extractArgus(result['Version'], result['Année-modèle'])
         return result
 
 
@@ -64,9 +93,6 @@ class MyThread(Thread):
         parser = bs4.BeautifulSoup(response, 'html.parser')
     
         annonces = parser.find_all(attrs={"class":"list_item clearfix trackable"})
-#        poolAnnonces = mp.Pool(processes=5)
-#        self.results = poolAnnonces.map(self.extractAllInformation, annonces)
-#        print("Run terminated !!")
         self.results = [self.extractAllInformation(annonce) for annonce in annonces]
     
 
@@ -113,6 +139,7 @@ def getContent(url, headers=None):
 
 
 def main():
+    
     regions = ['ile_de_france', 'provence_alpes_cote_d_azur', 'aquitaine']
 
     # Démarre tous les threads
@@ -132,8 +159,10 @@ def main():
        results += thread.results
 
     dataframe = pd.DataFrame().from_dict(results)
-    dataframe.to_csv('/home/nazha/tmp/lbc.csv', index=False, columns=['ID', 'Region', 'Type', 'Année-modèle','Kilométrage','Modèle','Prix','Title'])
     
+    print(dataframe)
+    dataframe.to_csv('/home/nazha/tmp/lbc.csv', index=False, columns=['ID', 'Region', 'Type', 'Année-modèle','Kilométrage','Modèle','Prix','Argus', 'Version', 'Title'])
+
     return 
     
     
